@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
-from augmentation import load_audio
+from .augmentation import load_audio
 from typing import Dict
 from catalyst.data.augmentor import Augmentor
 from torchvision import transforms
@@ -17,7 +17,6 @@ class AudioReader(ReaderSpec):
         self,
         input_key: str,
         output_key: str,
-        root: str,
     ):
         """
         Args:
@@ -25,38 +24,29 @@ class AudioReader(ReaderSpec):
             output_key (str): key to use to store the result
         """
         super().__init__(input_key, output_key)
-        self.root = root
 
     def __call__(self, row):
         """Reads a row from your annotations dict with filename and
-        transfer it to an image
+        transfer it to an audio
 
         Args:
             row: elem in your dataset.
 
         Returns:
-            np.ndarray: Image
+            np.ndarray: Audio
         """
         audio_name = str(row[self.input_key])
         audio = load_audio(audio_name, 16000)
-
-        result = {self.output_key: audio}
-        return result
+        return {self.output_key: audio.copy()}
 
 
-def _prepare(meta_info_file, data_file, root_folder):
+def _prepare(data_file, root_folder):
 
-    meta = pd.read_csv(meta_info_file)
-
-    meta_dict = pd.Series(meta['Gender '].values, index=meta['VoxCeleb2 ID '].apply(lambda x: x.strip())).to_dict()
+    # example of row id00012/s7MiVWybRhg/00150.wav 0
 
     df = pd.read_csv(data_file, sep='\s', engine='python', names=["filepath", "label"])
 
-    df['label'] = df['label'].astype(np.int64)
-
-    df['id'] = df['filepath'].apply(lambda x: x.split('/')[0])
-
-    df['gender'] = df['id'].map(meta_dict).apply(lambda x: 0 if x == 'm' else 1)
+    df['label'] = df['label'].astype(np.uint8)
 
     df['filepath'] = df['filepath'].apply(lambda x: "{}/{}".format(root_folder, x))
 
@@ -70,18 +60,22 @@ def create_dataloders(train_file: str,
                       root_folder: str,
                       meta_info_file: str,
                       num_classes: int,
+                      one_hot_encoding: bool,
                       bs: int,
                       num_workers: int,
                       augmenters: Dict = None,
                       ):
 
-    train_data = _prepare(meta_info_file, train_file, root_folder)
-    valid_data = _prepare(meta_info_file, valid_file, root_folder)
+    train_data = _prepare(train_file, root_folder)
+    valid_data = _prepare(valid_file, root_folder)
+
+    train_augmenter = augmenters['train']
+    valid_augmenter = augmenters['valid']
 
     train_transforms_fn = transforms.Compose([
         Augmentor(
             dict_key="features",
-            augment_fn=lambda x: augmenters['train'](samples=x, sample_rate=16000)
+            augment_fn=lambda x: train_augmenter(samples=x, sample_rate=16000)
         )
     ])
 
@@ -90,15 +84,15 @@ def create_dataloders(train_file: str,
     valid_transforms_fn = transforms.Compose([
         Augmentor(
             dict_key="features",
-            augment_fn=lambda x: augmenters['valid'](samples=x, sample_rate=16000)
+            augment_fn=lambda x: valid_augmenter(samples=x, sample_rate=16000)
         )
     ])
 
-    open_fn = ReaderCompose([
+    compose = [
+
         AudioReader(
             input_key="filepath",
             output_key="features",
-            root=root_folder,
         ),
         ScalarReader(
             input_key="label",
@@ -106,17 +100,18 @@ def create_dataloders(train_file: str,
             default_value=-1,
             dtype=np.int64
         ),
-        ScalarReader(
+    ]
+
+    if one_hot_encoding:
+        compose.append(ScalarReader(
             input_key="label",
             output_key="targets_one_hot",
             default_value=-1,
             dtype=np.int64,
             one_hot_classes=num_classes,
-        )
-    ])
+        ))
 
-    # current time doesn't use sampler
-    sampler = None
+    open_fn = ReaderCompose(compose)
 
     train_loader = catalyst_utils.get_loader(
         train_data,
@@ -124,8 +119,7 @@ def create_dataloders(train_file: str,
         dict_transform=train_transforms_fn,
         batch_size=bs,
         num_workers=num_workers,
-        shuffle=sampler is None,  # shuffle data only if Sampler is not specified (PyTorch requirement)
-        sampler=sampler
+        shuffle=True,  # shuffle data only if Sampler is not specified (PyTorch requirement)
     )
 
     valid_loader = catalyst_utils.get_loader(
@@ -133,9 +127,8 @@ def create_dataloders(train_file: str,
         open_fn=open_fn,
         dict_transform=valid_transforms_fn,
         batch_size=bs,
-        num_workers=num_workers,
+        num_workers=1,
         shuffle=False,
-        sampler=None
     )
 
     loaders = OrderedDict()
