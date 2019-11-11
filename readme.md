@@ -1,6 +1,8 @@
 # README #
 
 # Weights coming soon
+# Next step
+ - Add this model as a uis-rnn backend
 
 This repo contains a Pytorch implementation of the paper,     
 [Utterance-level Aggregation For Speaker Recognition In The Wild (Xie et al., ICASSP 2019) (Oral)](https://arxiv.org/pdf/1902.10107.pdf).
