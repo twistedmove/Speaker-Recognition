@@ -1,8 +1,7 @@
 import librosa
 import random
 import numpy as np
-
-eps = 1e-5
+import scipy.io.wavfile as wavfile
 
 
 def mel_spectrogram(data: np.ndarray, n_fft: int, hop_length: int, win_length: int) -> np.ndarray:
@@ -23,11 +22,19 @@ def mfcc(transpose_mel_spectrogram: np.ndarray, n_mfcc: int = 20) -> np.ndarray:
     return librosa.feature.mfcc(S=transpose_mel_spectrogram.T, n_mfcc=n_mfcc)
 
 
-def load_audio(path: str, sample_rate: int = 16000) -> np.ndarray:
+def load_audio(path: str, sample_rate: int = 16000, ignore_zero: bool = False) -> np.ndarray:
 
     assert path.split('.')[-1] == 'wav'
 
-    audio, sr_ret = librosa.load(path, sr=sample_rate)
+    # librosa slower then the wave to load
+    #audio, sr_ret = librosa.load(path, sr=sample_rate)
+    sr_ret, audio = wavfile.read(path)
+    audio = np.array(audio, dtype=np.float32)
+    audio /= 2 ** 15
+
+    if ignore_zero:
+        audio = audio[audio != 0]
+
     assert sr_ret == sample_rate
 
     return audio
@@ -46,7 +53,7 @@ def spectrogram2magnitude(spectrogram: np.ndarray) -> np.ndarray:
     return magnitude
 
 
-def normalize(magnitude: np.ndarray) -> np.ndarray:
+def normalize(magnitude: np.ndarray, eps=1e-5) -> np.ndarray:
 
     # preprocessing, subtract mean, divided by time-wise var
     mu = np.mean(magnitude, 0, keepdims=True)

@@ -4,7 +4,6 @@ from torchvision.models.resnet import BasicBlock
 from torchvision.models.resnet import Bottleneck
 from torch import nn
 from typing import Tuple
-from .activation import Mish
 
 pretrained_settings = {}
 
@@ -80,28 +79,23 @@ class ResNetEncoder(ResNet):
         super().load_state_dict(state_dict, **kwargs)
 
 
-def _get_activation(name: str):
-    return nn.ReLU if name == 'relu' else Mish
-
-
 class ConvBlock(nn.Module):
     def __init__(self, in_channels,
                  middle_channels: Tuple[int, int, int],
                  kernel_size,
                  stride: Tuple[int, int] = (2, 2),
-                 use_shortcut: bool = True,
-                 activation_name: str = 'relu'):
+                 use_shortcut: bool = True):
         super(ConvBlock, self).__init__()
 
         self.block = nn.Sequential(
             nn.Conv2d(in_channels, middle_channels[0], kernel_size=(1, 1), stride=stride, bias=False),
             nn.BatchNorm2d(middle_channels[0]),
-            _get_activation(activation_name)(inplace=True),
+            nn.ReLU(inplace=True),
         )
         self.block1 = nn.Sequential(
             nn.Conv2d(middle_channels[0], middle_channels[1], kernel_size=kernel_size, padding=1, bias=False),
             nn.BatchNorm2d(middle_channels[1]),
-            _get_activation(activation_name)(inplace=True),
+            nn.ReLU(inplace=True),
         )
         self.block2 = nn.Sequential(
             nn.Conv2d(middle_channels[1], middle_channels[2], kernel_size=(1, 1), bias=False),
@@ -115,7 +109,7 @@ class ConvBlock(nn.Module):
         else:
             self.shortcut = nn.Identity()
 
-        self.activation = _get_activation(activation_name)(inplace=True)
+        self.activation = nn.ReLU(inplace=True)
 
     def forward(self, x):
 
@@ -134,61 +128,47 @@ class ConvBlock(nn.Module):
 
 class ResNet34s(nn.Module):
     def __init__(self, in_channels: int,
-                 middle_channels: int,
-                 activation_name: str = 'relu'):
+                 middle_channels: int):
         super(ResNet34s, self).__init__()
         self.in_channels = in_channels
 
         self.x1 = nn.Sequential(
             nn.Conv2d(in_channels, middle_channels, kernel_size=(7, 7), padding=2,  bias=False),
             nn.BatchNorm2d(middle_channels),
-            _get_activation(activation_name)(inplace=True),
+            nn.ReLU(inplace=True),
             nn.MaxPool2d((2, 2), stride=(2, 2))
         )
 
         self.x2 = nn.Sequential(
-            ConvBlock(middle_channels, (48,  48, 96), kernel_size=3, stride=(1, 1), activation_name=activation_name),
-            ConvBlock(96, (48,  48, 96), kernel_size=3, use_shortcut=False, stride=(1, 1), activation_name=activation_name),
+            ConvBlock(middle_channels, (48,  48, 96), kernel_size=3, stride=(1, 1)),
+            ConvBlock(96, (48,  48, 96), kernel_size=3, use_shortcut=False, stride=(1, 1)),
         )
 
         self.x3 = nn.Sequential(
-            ConvBlock(96, (96, 96, 128), kernel_size=3, activation_name=activation_name),
+            ConvBlock(96, (96, 96, 128), kernel_size=3),
             ConvBlock(128, (96, 96, 128), kernel_size=3, stride=(1, 1),
-                      use_shortcut=False, activation_name=activation_name),
+                      use_shortcut=False),
             ConvBlock(128, (96, 96, 128), kernel_size=3, stride=(1, 1),
-                      use_shortcut=False, activation_name=activation_name),
+                      use_shortcut=False),
         )
 
         self.x4 = nn.Sequential(
-            ConvBlock(128, (128, 128, 256), kernel_size=3, activation_name=activation_name),
+            ConvBlock(128, (128, 128, 256), kernel_size=3),
             ConvBlock(256, (128, 128, 256), kernel_size=3, stride=(1, 1),
-                      use_shortcut=False, activation_name=activation_name),
+                      use_shortcut=False),
             ConvBlock(256, (128, 128, 256), kernel_size=3, stride=(1, 1),
-                      use_shortcut=False, activation_name=activation_name),
+                      use_shortcut=False),
         )
 
         # stride=(2, 1) or stride=(2, 2) ?
         self.x5 = nn.Sequential(
-            ConvBlock(256, (256, 256, 512), kernel_size=3, activation_name=activation_name),
+            ConvBlock(256, (256, 256, 512), kernel_size=3),
             ConvBlock(512, (256, 256, 512), kernel_size=3, stride=(1, 1),
-                      use_shortcut=False, activation_name=activation_name),
+                      use_shortcut=False),
             ConvBlock(512, (256, 256, 512), kernel_size=3, stride=(1, 1),
-                      use_shortcut=False, activation_name=activation_name),
+                      use_shortcut=False),
             nn.MaxPool2d((3, 1), stride=(2, 2))
         )
-
-        self._init_params()
-
-    def _init_params(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.orthogonal_(m.weight, gain=nn.init.calculate_gain('relu'))
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                # Initialize kernels of Conv2d layers as kaiming normal
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
 
@@ -218,7 +198,6 @@ resnet_encoders = {
         'params': {
             'in_channels': 1,
             'middle_channels': 64,
-            'activation_name': 'relu',
         },
     },
 
@@ -248,11 +227,8 @@ encoders = {}
 encoders.update(resnet_encoders)
 
 
-def get_encoder(name, encoder_weights=None, activation_name=None):
+def get_encoder(name, encoder_weights=None):
     Encoder = encoders[name]['encoder']
-
-    if 'activation_name' in encoders[name]['params']:
-        encoders[name]['params']['activation_name'] = activation_name
 
     encoder = Encoder(**encoders[name]['params'])
 

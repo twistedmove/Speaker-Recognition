@@ -30,6 +30,7 @@ class AddGaussianNoise(BasicTransform):
         self.max_amplitude = max_amplitude
 
     def apply(self, samples, **kwargs):
+        samples = samples.copy()
         noise = np.random.randn(len(samples)).astype(np.float32)
         amplitude = random.uniform(self.min_amplitude, self.max_amplitude)
         samples = samples + amplitude * noise
@@ -48,9 +49,11 @@ class PitchShift(BasicTransform):
         self.max_semitones = max_semitones
 
     def apply(self, samples, **kwargs):
+        samples = samples.copy()
+        sr = kwargs['sample_rate']
         num_semitones = random.uniform(self.min_semitones, self.max_semitones)
         pitch_shifted_samples = librosa.effects.pitch_shift(
-            samples, **kwargs, n_steps=num_semitones
+            samples, sr=sr, n_steps=num_semitones
         )
         return pitch_shifted_samples
 
@@ -74,6 +77,7 @@ class Shift(BasicTransform):
         self.max_fraction = max_fraction
 
     def apply(self, samples, **kwargs):
+        samples = samples.copy()
         num_places_to_shift = int(
             round(random.uniform(self.min_fraction, self.max_fraction) * len(samples))
         )
@@ -98,6 +102,7 @@ class TimeStretch(BasicTransform):
         If `rate > 1`, then the signal is sped up.
         If `rate < 1`, then the signal is slowed down.
         """
+        samples = samples.copy()
         rate = random.uniform(self.min_rate, self.max_rate)
         time_stretched_samples = librosa.effects.time_stretch(samples, rate)
         if self.leave_length_unchanged:
@@ -144,7 +149,7 @@ class FrequencyMask(BasicTransform):
         )
         freq_start = random.randint(16, sample_rate / 2 - band_width)
         samples = self.__butter_bandstop_filter(
-            samples, freq_start, freq_start + band_width, sample_rate, order=6
+            samples.copy(), freq_start, freq_start + band_width, sample_rate, order=6
         )
         return samples
 
@@ -185,19 +190,31 @@ class RandomCrop(BasicTransform):
         self.func = crop
 
     def apply(self, samples, **kwargs):
-        return self.func(samples, self.spectrogram_length)
+        return self.func(samples.copy(), self.spectrogram_length)
+
+
+class Append(BasicTransform):
+    """Double the input.
+    """
+
+    def __init__(self, reverse=True, p: float = 1.0):
+        super().__init__(p)
+        self.direction = -1 if reverse else 1
+
+    def apply(self, samples, **kwargs):
+        return np.append(samples, samples[::self.direction]).copy()
 
 
 class ToTensor(BasicTransform):
     """Convert numpy.ndarray to tensor.
     """
 
-    def __init__(self, p :float =1.0):
+    def __init__(self, p: float = 1.0):
         super().__init__(p)
         self.func = to_tensor
 
     def apply(self, samples, **kwargs):
-        return self.func(samples)
+        return self.func(samples).copy()
 
 
 class Transpose(BasicTransform):
@@ -209,7 +226,7 @@ class Transpose(BasicTransform):
         self.func = np.transpose
 
     def apply(self, samples, **kwargs):
-        return self.func(samples)
+        return self.func(samples).copy()
 
 
 class ToSpectrogram(BasicTransform):
@@ -225,7 +242,7 @@ class ToSpectrogram(BasicTransform):
         self.kind = kind
 
     def apply(self, samples, **kwargs):
-        return self.func(samples, self.n_fft, self.hop_length, self.win_length)
+        return self.func(samples, self.n_fft, self.hop_length, self.win_length).copy()
 
 
 class NormalizeSpectrogram(BasicTransform):
@@ -237,7 +254,7 @@ class NormalizeSpectrogram(BasicTransform):
         self.func = normalize
 
     def apply(self, samples, **kwargs):
-        return self.func(samples)
+        return self.func(samples).copy()
 
 
 class ToMagnitude(BasicTransform):
@@ -249,4 +266,4 @@ class ToMagnitude(BasicTransform):
         self.func = spectrogram2magnitude
 
     def apply(self, samples, **kwargs):
-        return self.func(samples)
+        return self.func(samples).copy()

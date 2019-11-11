@@ -8,11 +8,11 @@ class Compose:
         transforms (list): list of transformations to compose.
         p (float): probability of applying selected transform. Default: 1.0.
     """
-    def __init__(self, transforms: 'BasicTransform', p: float=1.0):
+    def __init__(self, transforms: 'BasicTransform', p: float = 1.0):
         self.transforms = transforms
         self.p = p
 
-        name_list = []
+        name_list = list()
         for transform in self.transforms:
             name_list.append(type(transform).__name__)
         self.__name__ = "_".join(name_list)
@@ -34,7 +34,7 @@ class OneOf(Compose):
         p (float): probability of applying selected transform. Default: 1.0.
     """
 
-    def __init__(self, transforms: 'BasicTransform', p: float=1.0):
+    def __init__(self, transforms: 'BasicTransform', p: float = 1.0):
         super(OneOf, self).__init__(transforms, p)
         transforms_ps = [t.p for t in transforms]
         s = sum(transforms_ps)

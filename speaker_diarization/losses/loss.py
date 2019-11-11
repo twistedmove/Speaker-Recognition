@@ -143,19 +143,18 @@ class HardTripletLoss(nn.Module):
 
     __name__ = "HardTripletLoss"
 
-    def __init__(self, margin: float = 0.2, squared: bool = False, device: str ='cuda'):
+    def __init__(self, margin: float = 0.2, squared: bool = False):
         super(HardTripletLoss, self).__init__()
 
         self.margin = margin
         self.squared = squared
-        self.device = device
 
     def forward(self, embeddings, targets):
 
-        return batch_hard_triplet_loss(targets.float(), embeddings, self.margin, self.squared, self.device)
+        return batch_hard_triplet_loss(targets.float(), embeddings.detach(), self.margin, self.squared)
 
 
-def batch_hard_triplet_loss(labels, embeddings, margin, squared=False, device='cpu'):
+def batch_hard_triplet_loss(labels, embeddings, margin, squared=False):
     """Build the triplet loss over a batch of embeddings.
     For each anchor, we get the hardest positive and hardest negative to form a triplet.
     Args:
@@ -169,6 +168,8 @@ def batch_hard_triplet_loss(labels, embeddings, margin, squared=False, device='c
     """
     # Get the pairwise distance matrix
     pairwise_dist = _pairwise_distances(embeddings, squared=squared)
+
+    device = labels.get_device()
 
     # For each anchor, get the hardest positive
     # First, we need to get a mask for every valid positive (they should have same label)
