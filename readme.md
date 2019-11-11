@@ -18,4 +18,5 @@ The dataset used for the experiments are
 
 - [Voxceleb1, Voxceleb2](http://www.robots.ox.ac.uk/~vgg/data/voxceleb/)
 
+### Accuracy metrics
 ![Accuracy curves](image/progress.jpg)
