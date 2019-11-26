@@ -3,23 +3,18 @@ from .transforms import *
 
 
 def get_training_augmentation(n_fft: int = 512, hop_length: int = 160,
-                              win_length: int = 400, kind: int = 0,
+                              win_length: int = 400, n_mels: int = 128,
                               spectrogram_length: int = 250):
 
     augmenter = Compose([
-        # OneOf([
-        #     AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.015, p=0.5),
-        #     TimeStretch(min_rate=0.8, max_rate=1.25, p=0.5),
-        #     PitchShift(min_semitones=-4, max_semitones=4, p=0.5),
-        #     Shift(min_fraction=-0.5, max_fraction=0.5, p=0.5),
-        # ], p=0.3),
-        Append(p=0.3),
-        ToSpectrogram(n_fft, hop_length, win_length, kind),
-        Transpose(),
-        ToMagnitude(),
-        Transpose(),
+        OneOf([
+            AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.015, p=0.5),
+            Shift(min_fraction=-0.5, max_fraction=0.5, p=0.5),
+        ], p=0.3),
+        ToMelSpectrogram(n_fft, hop_length, win_length, n_mels),
         RandomCrop(spectrogram_length=spectrogram_length, p=1.0),
         NormalizeSpectrogram(),
+        SpecAugment(),
         ToTensor(),
     ], p=1.0)
 
@@ -27,15 +22,11 @@ def get_training_augmentation(n_fft: int = 512, hop_length: int = 160,
 
 
 def get_valid_augmentation(n_fft: int = 512, hop_length: int = 160,
-                           win_length: int = 400, kind: int = 0,
+                           win_length: int = 400, n_mels: int = 128,
                            spectrogram_length: int = 250):
 
     augmenter = Compose([
-        Append(p=0.8),
-        ToSpectrogram(n_fft, hop_length, win_length, kind),
-        Transpose(),
-        ToMagnitude(),
-        Transpose(),
+        ToMelSpectrogram(n_fft, hop_length, win_length, n_mels),
         RandomCrop(spectrogram_length=spectrogram_length, p=1.0),
         NormalizeSpectrogram(),
         ToTensor(),

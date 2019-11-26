@@ -3,7 +3,7 @@ import librosa
 import random
 import numpy as np
 from scipy.signal import butter, lfilter
-from .utils import crop, to_tensor, linear_spectrogram, mel_spectrogram, normalize, spectrogram2magnitude
+from .utils import crop, to_tensor, linear_spectrogram, mel_spectrogram, normalize, spectrogram2magnitude, spec_augment
 
 
 class BasicTransform(metaclass=abc.ABCMeta):
@@ -157,7 +157,7 @@ class FrequencyMask(BasicTransform):
 class TimeMask(BasicTransform):
     """Mask some time band on the spectrogram. Inspired by https://arxiv.org/pdf/1904.08779.pdf """
 
-    def __init__(self, min_band_part=0.0, max_band_part=0.5, p=0.5):
+    def __init__(self, min_band_part=0.0, max_band_part=0.5, fade=False, p=0.5):
         """
         :param min_band_part: Minimum length of the silent part as a fraction of the
             total sound length. Float.
@@ -168,6 +168,7 @@ class TimeMask(BasicTransform):
         super().__init__(p)
         self.min_band_part = min_band_part
         self.max_band_part = max_band_part
+        self.fade = fade
 
     def apply(self, samples, **kwargs):
         new_samples = samples.copy()
@@ -176,7 +177,12 @@ class TimeMask(BasicTransform):
             int(new_samples.shape[0] * self.max_band_part),
         )
         _t0 = random.randint(0, new_samples.shape[0] - _t)
-        new_samples[_t0 : _t0 + _t] = 0
+        mask = np.zeros(_t)
+        if self.fade:
+            fade_length = min(int(kwargs['sample_rate'] * 0.01), int(_t * 0.1))
+            mask[0:fade_length] = np.linspace(1, 0, num=fade_length)
+            mask[-fade_length:] = np.linspace(0, 1, num=fade_length)
+        new_samples[_t0: _t0 + _t] *= mask
         return new_samples
 
 
@@ -229,20 +235,35 @@ class Transpose(BasicTransform):
         return self.func(samples).copy()
 
 
-class ToSpectrogram(BasicTransform):
+class ToLinearSpectrogram(BasicTransform):
     """Convert wav audio to spectrogram.
     """
 
-    def __init__(self, n_fft: int, hop_length: int, win_length: int, kind: int = 0, p=1.0):
+    def __init__(self, n_fft: int, hop_length: int, win_length: int, p=1.0):
         super().__init__(p)
-        self.func = linear_spectrogram if kind == 0 else mel_spectrogram
+        self.func = linear_spectrogram
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.win_length = win_length
-        self.kind = kind
 
     def apply(self, samples, **kwargs):
         return self.func(samples, self.n_fft, self.hop_length, self.win_length).copy()
+
+
+class ToMelSpectrogram(BasicTransform):
+    """Convert wav audio to spectrogram.
+    """
+
+    def __init__(self, n_fft: int, hop_length: int, win_length: int, n_mels: int, p=1.0):
+        super().__init__(p)
+        self.func = mel_spectrogram
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.n_mels = n_mels
+
+    def apply(self, samples, **kwargs):
+        return self.func(samples, self.n_fft, self.hop_length, self.win_length, self.n_mels).copy()
 
 
 class NormalizeSpectrogram(BasicTransform):
@@ -267,3 +288,23 @@ class ToMagnitude(BasicTransform):
 
     def apply(self, samples, **kwargs):
         return self.func(samples).copy()
+
+
+class SpecAugment(BasicTransform):
+    """
+     """
+
+    def __init__(self, num_mask=1,
+                 freq_masking=0.15,
+                 time_masking=0.20,
+                 p=1.0):
+        super().__init__(p)
+        self.num_mask = num_mask
+        self.freq_masking = freq_masking
+        self.time_masking = time_masking
+        self.func = spec_augment
+
+    def apply(self, samples, **kwargs):
+        return self.func(samples, num_mask=self.num_mask,
+                         freq_masking=self.freq_masking,
+                         time_masking=self.time_masking).copy()
