@@ -4,45 +4,55 @@ import torch.nn.functional as F
 from .backbone import get_encoder
 
 
-class SpatialAttention2d(nn.Module):
-    """Spatial Attention Layer"""
-    def __init__(self, channel):
-        super(SpatialAttention2d, self).__init__()
-        self.squeeze = nn.Conv2d(channel, 1, kernel_size=1, bias=False)
+# Source: https://github.com/luuuyi/CBAM.PyTorch
+class ChannelAttention(nn.Module):
+    def __init__(self, in_planes, ratio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.fc1 = nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        z = self.squeeze(x)
-        z = self.sigmoid(z)
-        return x * z
+        avg_out = self.fc2(self.relu1(self.fc1(self.avg_pool(x))))
+        max_out = self.fc2(self.relu1(self.fc1(self.max_pool(x))))
+        out = avg_out + max_out
+        return self.sigmoid(out)
 
 
-def conv1d(ni: int, no: int, ks: int = 1, stride: int = 1, padding: int = 0, bias: bool = False):
-    """Create and initialize a `nn.Conv1d` layer with spectral normalization."""
-    conv = nn.Conv1d(ni, no, ks, stride=stride, padding=padding, bias=bias)
-    nn.init.kaiming_normal_(conv.weight)
-    if bias:
-        conv.bias.data.zero_()
-    return torch.nn.utils.spectral_norm(conv)
+# Source: https://github.com/luuuyi/CBAM.PyTorch
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
 
+        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        padding = 3 if kernel_size == 7 else 1
 
-class SelfAttention1d(nn.Module):
-    """Self attention layer for nd."""
-    def __init__(self, n_channels: int):
-        super(SelfAttention1d, self).__init__()
-        self.query = conv1d(n_channels, n_channels // 8)
-        self.key = conv1d(n_channels, n_channels // 8)
-        self.value = conv1d(n_channels, n_channels)
-        self.gamma = nn.Parameter(torch.tensor([0.]), requires_grad=True)
+        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.conv1(x)
+        return self.sigmoid(x)
 
-        size = x.size()
-        x = x.view(*size[:2], -1)
-        f, g, h = self.query(x), self.key(x), self.value(x)
-        beta = F.softmax(torch.bmm(f.permute(0, 2, 1).contiguous(), g), dim=1)
-        o = self.gamma * torch.bmm(h, beta) + x
-        return o.view(*size).contiguous()
+
+class ConvolutionalBlockAttentionModule(nn.Module):
+    def __init__(self, in_planes, ratio=16, kernel_size=7):
+        super(ConvolutionalBlockAttentionModule, self).__init__()
+        self.ca = ChannelAttention(in_planes, ratio)
+        self.sa = SpatialAttention(kernel_size)
+
+    def forward(self, x):
+        out = self.ca(x) * x
+        out = self.sa(out) * out
+        return out
 
 
 class VladPooling(nn.Module):
@@ -70,10 +80,6 @@ class VladPooling(nn.Module):
         num_features = features.shape[1]
 
         max_cluster_score = cluster_score.max(dim=1, keepdim=True)[0]
-
-        #exp_cluster_score = torch.exp(cluster_score - max_cluster_score)
-
-        #soft_assign = exp_cluster_score / (exp_cluster_score.sum(dim=1, keepdim=True))
 
         soft_assign = F.softmax(cluster_score - max_cluster_score, dim=1)
 
@@ -103,27 +109,25 @@ class Decoder(nn.Module):
                  k_clusters: int = 8,
                  g_clusters: int = 2,
                  mode: str = 'gvlad',
-                 loss_name: str = 'softmax',
                  use_attention: bool = False):
         super(Decoder, self).__init__()
 
         self.k_clusters = k_clusters
         self.mode = mode
-        self.loss_name = loss_name
         self.g_clusters = g_clusters
 
         if self.mode != 'gvlad':
             self.g_clusters = 0
 
-        self.use_attention = use_attention
+        self.attention = nn.Identity()
 
         if use_attention:
-            self.attention = SelfAttention1d(middle_channels)
+            self.attention = ConvolutionalBlockAttentionModule(middle_channels, kernel_size=3)
 
-        self.conv = nn.Sequential(nn.Conv2d(middle_channels, middle_channels, kernel_size=(7, 1), stride=(1, 1)),
+        self.conv = nn.Sequential(nn.Conv2d(middle_channels, middle_channels, kernel_size=(3, 1), stride=(1, 1)),
                                   nn.ReLU(inplace=True))
 
-        self.conv_center = nn.Conv2d(middle_channels, self.k_clusters + self.g_clusters, kernel_size=(7, 1), stride=(1, 1))
+        self.conv_center = nn.Conv2d(middle_channels, self.k_clusters + self.g_clusters, kernel_size=(3, 1), stride=(1, 1))
 
         self.vlad_polling = VladPooling(middle_channels, self.k_clusters, self.g_clusters, self.mode)
 
@@ -135,17 +139,17 @@ class Decoder(nn.Module):
 
     def forward(self, features, **kwargs):
 
-        if self.use_attention:
+        x5, x4, x3, x2, x1 = features
 
-            features += self.attention(features)
+        features = self.attention(x5)
 
-        embeddings = self.vlad_polling((self.conv(features), self.conv_center(features)))
+        conv = self.conv(features)
+
+        conv_center = self.conv_center(features)
+
+        embeddings = self.vlad_polling((conv, conv_center))
 
         embeddings = self.fc(embeddings)
-
-        if 'asoftmax' in self.loss_name.lower():
-
-            embeddings = F.normalize(embeddings, p=2, dim=-1)
 
         vlad = self.logit(embeddings)
 
@@ -223,7 +227,6 @@ class SpeakerDiarization(EncoderDecoder):
             encoder_name: str = 'resnet34s',
             encoder_weights: str = None,
             mode: str = 'gvlad',
-            loss_name: str = 'softmax',
             use_attention: bool = False,
     ):
         encoder = get_encoder(
@@ -236,7 +239,6 @@ class SpeakerDiarization(EncoderDecoder):
                           k_clusters,
                           g_clusters,
                           mode,
-                          loss_name,
                           use_attention)
 
         super().__init__(encoder, decoder, None)
