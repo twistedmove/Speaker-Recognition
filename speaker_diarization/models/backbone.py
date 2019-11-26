@@ -172,13 +172,13 @@ class ResNet34s(nn.Module):
 
     def forward(self, x):
 
-        x = self.x1(x)
-        x = self.x2(x)
-        x = self.x3(x)
-        x = self.x4(x)
-        x = self.x5(x)
+        x1 = self.x1(x)
+        x2 = self.x2(x1)
+        x3 = self.x3(x2)
+        x4 = self.x4(x3)
+        x5 = self.x5(x4)
 
-        return x
+        return [x5, x4, x3, x2, x1]
 
 
 resnet_encoders = {
