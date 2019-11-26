@@ -13,7 +13,7 @@ This repo contains a Pytorch implementation of the paper,
 ### Dependencies
 - [PyTorch 1.3.1](https://pytorch.org/)
 - [Catalyst 19.11.6](https://github.com/catalyst-team/catalyst)
-- [Apex](https://github.com/NVIDIA/apex)
+- [Apex 0.1](https://github.com/NVIDIA/apex)
 
 ### Data
 The dataset used for the experiments are
