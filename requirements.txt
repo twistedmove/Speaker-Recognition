@@ -1,0 +1,5 @@
+catalyst==19.11.6
+librosa==0.7.1
+PyYAML==5.1.2
+pandas==0.25.3
+wandb==0.8.16
