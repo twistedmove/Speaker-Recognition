@@ -35,6 +35,9 @@ parser.add_argument("--triplet_loss", help="triplet_loss", type=bool, default=Fa
 parser.add_argument("--one_hot_encoding", help="one_hot_encoding", type=bool, default=False)
 parser.add_argument("--clamp", help="clamp", type=bool, default=False)
 parser.add_argument("--scheduler", help="scheduler", type=str, default='MultiStepLR')
+parser.add_argument('--attention', dest='attention', action='store_true')
+parser.add_argument('--no-attention', dest='attention', action='store_false')
+parser.set_defaults(attention=True)
 
 args = parser.parse_args()
 
@@ -50,7 +53,7 @@ n_mels = settings['n_mels']
 
 class_names = [str(i) for i in range(args.num_classes)]
 
-model = SpeakerDiarization(args.dim, args.num_classes, use_attention=True).to('cuda')
+model = SpeakerDiarization(args.dim, args.num_classes, use_attention=args.attention).to('cuda')
 
 if args.clamp:
     for p in model.parameters():
