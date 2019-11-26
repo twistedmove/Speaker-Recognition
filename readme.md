@@ -11,9 +11,9 @@ This repo contains a Pytorch implementation of the paper,
 [The VoxCeleb Speaker Recognition Challenge (VoxSRC)](http://www.robots.ox.ac.uk/~vgg/data/voxceleb/competition.html).
 
 ### Dependencies
-- [Python 3.6.0](https://www.continuum.io/downloads)
-- [PyTorch 1.3.0](https://pytorch.org/)
-- [Catalyst 19.11](https://github.com/catalyst-team/catalyst)
+- [PyTorch 1.3.1](https://pytorch.org/)
+- [Catalyst 19.11.6](https://github.com/catalyst-team/catalyst)
+- [Apex](https://github.com/NVIDIA/apex)
 
 ### Data
 The dataset used for the experiments are
