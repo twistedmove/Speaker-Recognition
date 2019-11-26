@@ -1,0 +1,5 @@
+n_fft: 512
+hop_length: 160
+win_length: 400
+spectrogram_length: 250
+n_mels: 128
