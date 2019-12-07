@@ -122,17 +122,16 @@ class Decoder(nn.Module):
         self.attention = nn.Identity()
 
         if use_attention:
-            self.attention = ConvolutionalBlockAttentionModule(middle_channels, kernel_size=3)
+            self.attention = ConvolutionalBlockAttentionModule(middle_channels, kernel_size=7)
 
-        self.conv = nn.Sequential(nn.Conv2d(middle_channels, middle_channels, kernel_size=(3, 1), stride=(1, 1)),
+        self.conv = nn.Sequential(nn.Conv2d(middle_channels, middle_channels, kernel_size=(7, 1), stride=(1, 1)),
                                   nn.ReLU(inplace=True))
 
-        self.conv_center = nn.Conv2d(middle_channels, self.k_clusters + self.g_clusters, kernel_size=(3, 1), stride=(1, 1))
+        self.conv_center = nn.Conv2d(middle_channels, self.k_clusters + self.g_clusters, kernel_size=(7, 1), stride=(1, 1))
 
         self.vlad_polling = VladPooling(middle_channels, self.k_clusters, self.g_clusters, self.mode)
 
-        self.fc = nn.Sequential(nn.Linear(middle_channels * self.k_clusters, middle_channels),
-                                nn.BatchNorm1d(middle_channels),
+        self.fc = nn.Sequential(nn.Linear(middle_channels * self.k_clusters, middle_channels, bias=True),
                                 nn.ReLU(inplace=True))
 
         self.logit = nn.Linear(middle_channels, out_channels, bias=False)
@@ -151,9 +150,9 @@ class Decoder(nn.Module):
 
         embeddings = self.fc(embeddings)
 
-        vlad = self.logit(embeddings)
+        logit = self.logit(embeddings)
 
-        return embeddings, vlad
+        return embeddings, logit
 
 
 class Model(nn.Module):
@@ -216,7 +215,7 @@ class EncoderDecoder(Model):
         return x
 
 
-class SpeakerDiarization(EncoderDecoder):
+class SpeakerRecognition(EncoderDecoder):
 
     def __init__(
             self,
