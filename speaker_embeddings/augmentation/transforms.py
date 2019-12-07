@@ -203,12 +203,23 @@ class Append(BasicTransform):
     """Double the input.
     """
 
-    def __init__(self, reverse=True, p: float = 1.0):
+    def __init__(self, p: float = 1.0):
         super().__init__(p)
-        self.direction = -1 if reverse else 1
 
     def apply(self, samples, **kwargs):
-        return np.append(samples, samples[::self.direction]).copy()
+        return np.append(samples, samples).copy()
+
+
+class Inverse(BasicTransform):
+    """Inverse input
+    """
+
+    def __init__(self, p: float = 1.0):
+        super().__init__(p)
+        self.direction = -1
+
+    def apply(self, samples, **kwargs):
+        return samples[::self.direction].copy()
 
 
 class ToTensor(BasicTransform):
