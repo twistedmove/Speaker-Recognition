@@ -19,9 +19,9 @@ def linear_spectrogram(data: np.ndarray, n_fft: int, hop_length: int, win_length
     return spectrogram
 
 
-def mfcc(transpose_mel_spectrogram: np.ndarray, n_mfcc: int = 20) -> np.ndarray:
+def mfcc(mel_spectrogram: np.ndarray, n_mfcc: int = 20) -> np.ndarray:
     # Mel-frequency cepstral coefficients
-    return librosa.feature.mfcc(S=transpose_mel_spectrogram.T, n_mfcc=n_mfcc)
+    return librosa.feature.mfcc(S=mel_spectrogram, n_mfcc=n_mfcc)
 
 
 def load_audio(path: str, sample_rate: int = 16000, ignore_zero: bool = False) -> np.ndarray:
@@ -31,13 +31,14 @@ def load_audio(path: str, sample_rate: int = 16000, ignore_zero: bool = False) -
     # librosa slower then the wave to load
     #audio, sr_ret = librosa.load(path, sr=sample_rate)
     sr_ret, audio = wavfile.read(path)
+
+    assert sr_ret == sample_rate
+
     audio = np.array(audio, dtype=np.float32)
     audio /= 2 ** 15
 
     if ignore_zero:
         audio = audio[audio != 0]
-
-    assert sr_ret == sample_rate
 
     return audio
 
@@ -50,7 +51,7 @@ def crop(data: np.ndarray, spectrogram_length: int) -> np.ndarray:
     return data
 
 
-def spectrogram2magnitude(spectrogram: np.ndarray) -> np.ndarray:
+def magnitude(spectrogram: np.ndarray) -> np.ndarray:
     magnitude, _ = librosa.magphase(spectrogram)  # magnitude
     return magnitude
 
