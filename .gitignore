@@ -158,7 +158,6 @@ fabric.properties
 *.pb
 *.pbmm
 #Logs
-*.log
 *.csv
 *.jpg
 *.jpeg
