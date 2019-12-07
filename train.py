@@ -1,11 +1,12 @@
 import argparse
 import torch
 import yaml
-from speaker_diarization import *
+from speaker_embeddings import *
 from catalyst.dl.runner import SupervisedWandbRunner as SupervisedRunner
 from catalyst.dl.callbacks import (AccuracyCallback,
                                    CriterionCallback, CriterionAggregatorCallback)
 from catalyst.contrib.schedulers import OneCycleLRWithWarmup
+from catalyst.contrib.optimizers import RAdam, Lookahead
 from collections import OrderedDict
 
 
@@ -35,6 +36,8 @@ parser.add_argument("--triplet_loss", help="triplet_loss", type=bool, default=Fa
 parser.add_argument("--one_hot_encoding", help="one_hot_encoding", type=bool, default=False)
 parser.add_argument("--clamp", help="clamp", type=bool, default=False)
 parser.add_argument("--scheduler", help="scheduler", type=str, default='MultiStepLR')
+parser.add_argument("--optimizer", help="optimizer", type=str, default='Adam')
+parser.add_argument("--warmup_steps", help="warmup_steps", type=int, default=15)
 parser.add_argument('--attention', dest='attention', action='store_true')
 parser.add_argument('--no-attention', dest='attention', action='store_false')
 parser.set_defaults(attention=True)
@@ -44,23 +47,18 @@ args = parser.parse_args()
 with open('spectrogram.yaml', 'r') as file:
     settings = yaml.safe_load(file)
 
-# spectrogram_parameters
-n_fft = settings['n_fft']
-hop_length = settings['hop_length']
-win_length = settings['win_length']
-spectrogram_length = settings['spectrogram_length']
-n_mels = settings['n_mels']
 
 class_names = [str(i) for i in range(args.num_classes)]
 
-model = SpeakerDiarization(args.dim, args.num_classes, use_attention=args.attention).to('cuda')
+model = SpeakerRecognition(args.dim, args.num_classes, use_attention=args.attention).to('cuda')
 
 if args.clamp:
+    print('clamp weights')
     for p in model.parameters():
         p.register_hook(lambda grad: torch.clamp(grad, min=1e-8))
 
-augmenters = {'train': get_training_augmentation(n_fft, hop_length, win_length, n_mels, spectrogram_length),
-              'valid': get_valid_augmentation(n_fft, hop_length, win_length, n_mels, spectrogram_length)}
+augmenters = {'train': get_training_augmentation(**settings),
+              'valid': get_valid_augmentation(**settings)}
 
 
 fp16 = None
@@ -80,7 +78,17 @@ loaders = create_dataloders(
 
 )
 
-optimizer = torch.optim.Adam(model.parameters(), lr=args.max_lr, weight_decay=1e-5)
+
+if args.optimizer == 'Adam':
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
+elif args.optimizer == 'RAdam':
+    base_optimizer = RAdam(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
+    optimizer = Lookahead(base_optimizer)
+elif args.optimizer == 'SGD':
+    optimizer = torch.optim.SGD(model.parameters(), momentum=0.95, lr=args.max_lr, weight_decay=1e-4)
+else:
+    print('You have choose the default Optimizer - Adam')
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
 
 criterion = OrderedDict({
     "ce": CustomCrossEntropyLoss(),
@@ -93,8 +101,9 @@ if args.scheduler == 'OneCycleLRWithWarmup':
     scheduler = OneCycleLRWithWarmup(
         optimizer,
         num_steps=args.num_epochs,
+        init_lr=args.max_lr,
         lr_range=(args.max_lr, args.min_lr),
-        warmup_steps=args.num_epochs // 4,
+        warmup_steps=args.warmup_steps,
         momentum_range=(0.85, 0.95),
     )
 else:
